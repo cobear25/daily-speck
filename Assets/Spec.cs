@@ -6,11 +6,12 @@ public class Spec : MonoBehaviour
     [SerializeField] float maxUpwardVelocity = 3f;
     [SerializeField] float maxFallVelocity = 3f;
     [SerializeField] float verticalAcceleration = 500f;
+    public GameController gameController;
     int deathCount = 0;
     float speed = 1.5f;
-    Vector2 initialPosition;
+    public Vector2 initialPosition;
 
-    bool movingRight = true;
+    public bool movingRight = true;
     bool acceleratingUp;
     Rigidbody2D specRigidbody;
 
@@ -61,8 +62,7 @@ public class Spec : MonoBehaviour
         }
         else if (collision.gameObject.CompareTag("goal"))
         {
-            Debug.Log("Goal reached!");
-            ResetPosition();
+            gameController.LevelBeat();
         }
         else
         {
