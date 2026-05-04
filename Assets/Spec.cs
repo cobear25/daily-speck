@@ -8,10 +8,11 @@ public class Spec : MonoBehaviour
     [SerializeField] float verticalAcceleration = 500f;
     public GameController gameController;
     int deathCount = 0;
-    float speed = 1.5f;
+    float speed = 1.3f;
     public Vector2 initialPosition;
 
     public bool movingRight = true;
+    public bool canMove = true;
     bool acceleratingUp;
     Rigidbody2D specRigidbody;
 
@@ -25,6 +26,12 @@ public class Spec : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        if (!canMove)
+        {
+            acceleratingUp = false;
+            return;
+        }
+
         if (movingRight)
         {
             transform.Translate(Vector3.right * Time.deltaTime * speed, Space.World);
@@ -42,6 +49,12 @@ public class Spec : MonoBehaviour
 
     void FixedUpdate()
     {
+        if (!canMove)
+        {
+            specRigidbody.linearVelocity = Vector2.zero;
+            return;
+        }
+
         Vector2 velocity = specRigidbody.linearVelocity;
 
         if (acceleratingUp)
@@ -77,6 +90,10 @@ public class Spec : MonoBehaviour
         specRigidbody.angularVelocity = 0f;
         acceleratingUp = false;
         movingRight = true;
+        if (gameController.currentLevel == 1)
+        {
+            movingRight = false;
+        }
         deathCount++;
         Debug.Log("Death count: " + deathCount);
     }

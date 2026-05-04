@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 5667294502878241190}
   - component: {fileID: 2165639620317687733}
   - component: {fileID: 4928198172301011675}
+  - component: {fileID: 5031010429798661507}
   m_Layer: 0
   m_Name: Small-Square
   m_TagString: Untagged
@@ -138,3 +139,18 @@ BoxCollider2D:
   m_AutoTiling: 0
   m_Size: {x: 1, y: 1}
   m_EdgeRadius: 0
+--- !u!114 &5031010429798661507
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5086602645915119192}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9c0ac65cdc42d4d09adb5a684a190b8d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: '::'
+  shouldRotate: 0
+  shouldMoveUpAndDown: 0
+  shouldMoveLeftAndRight: 0
