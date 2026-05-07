@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using TMPro;
+using UnityEngine.UI;
 
 public enum LevelType
 {
@@ -58,6 +59,18 @@ public class GameController : MonoBehaviour
     public GameObject curvyLedgePrefab;
     public GameObject jamPrefab;
 
+    public GameObject winPanel;
+    public TextMeshProUGUI dateText;
+    public TextMeshProUGUI totalAttemptsText;
+    public TextMeshProUGUI level0AttemptsText;
+    public TextMeshProUGUI level1AttemptsText;
+    public TextMeshProUGUI level2AttemptsText;
+    public Image jam0Image;
+    public Image jam1Image;
+    public Image jam2Image;
+
+    public GameObject leaderboardPanel;
+
     [Header("Daily Obstacles")]
     [SerializeField] Vector2Int[] squareObstacleCountRangesByLevel =
     {
@@ -94,6 +107,7 @@ public class GameController : MonoBehaviour
     public int currentLevel = 0;
     static bool hasShownInitialCountdown = false;
     bool[] foundJamByLevel = new bool[3];
+    int[] attemptsByLevel = new int[3];
     bool useDebugRandomSeed = false;
     int debugRandomSeed = 0;
 
@@ -105,6 +119,11 @@ public class GameController : MonoBehaviour
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
+        if (winPanel != null)
+        {
+            winPanel.SetActive(false);
+        }
+
         GenerateLevel();
 
         if (!hasShownInitialCountdown)
@@ -137,16 +156,26 @@ public class GameController : MonoBehaviour
     public void LevelBeat()
     {
         useDebugRandomSeed = false;
-        currentLevel++;
-        if (currentLevel >= 3)
+
+        if (currentLevel >= 2)
         {
-            currentLevel = 0;
+            ShowWinPanel();
+            return;
         }
+
+        currentLevel++;
         GenerateLevel();
     }
 
     void GenerateLevel()
     {
+        if (winPanel != null)
+        {
+            winPanel.SetActive(false);
+        }
+
+        attemptsByLevel[currentLevel % attemptsByLevel.Length] = Mathf.Max(1, attemptsByLevel[currentLevel % attemptsByLevel.Length]);
+
         // clear all children of levelContainer
         foreach (Transform child in levelContainer)
         {
@@ -196,6 +225,59 @@ public class GameController : MonoBehaviour
         TryPlaceJam(occupiedSpaces, random);
         
         Camera.main.backgroundColor = GetLevelBackgroundColor();
+    }
+
+    public void RecordAttempt()
+    {
+        attemptsByLevel[currentLevel % attemptsByLevel.Length]++;
+    }
+
+    void ShowWinPanel()
+    {
+        if (spec != null)
+        {
+            spec.canMove = false;
+        }
+
+        if (dateText != null)
+        {
+            dateText.text = DateTime.Today.ToString("MMMM d yyyy");
+        }
+
+        int totalAttempts = attemptsByLevel[0] + attemptsByLevel[1] + attemptsByLevel[2];
+        if (totalAttemptsText != null)
+        {
+            totalAttemptsText.text = totalAttempts + " total attempts";
+        }
+
+        SetText(level0AttemptsText, attemptsByLevel[0].ToString());
+        SetText(level1AttemptsText, attemptsByLevel[1].ToString());
+        SetText(level2AttemptsText, attemptsByLevel[2].ToString());
+
+        SetImageVisible(jam0Image, foundJamByLevel[0]);
+        SetImageVisible(jam1Image, foundJamByLevel[1]);
+        SetImageVisible(jam2Image, foundJamByLevel[2]);
+
+        if (winPanel != null)
+        {
+            winPanel.SetActive(true);
+        }
+    }
+
+    void SetText(TextMeshProUGUI text, string value)
+    {
+        if (text != null)
+        {
+            text.text = value;
+        }
+    }
+
+    void SetImageVisible(Image image, bool isVisible)
+    {
+        if (image != null)
+        {
+            image.gameObject.SetActive(isVisible);
+        }
     }
 
     IEnumerator PlayInitialCountdown()

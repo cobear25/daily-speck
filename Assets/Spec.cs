@@ -15,17 +15,24 @@ public class Spec : MonoBehaviour
     public bool canMove = true;
     bool acceleratingUp;
     Rigidbody2D specRigidbody;
+    float originalGravityScale;
+    bool wasMoving;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         specRigidbody = GetComponent<Rigidbody2D>();
+        originalGravityScale = specRigidbody.gravityScale;
+        wasMoving = !canMove;
+        ApplyMovementState();
         initialPosition = transform.position;
     }
 
     // Update is called once per frame
     void Update()
     {
+        ApplyMovementState();
+
         if (!canMove)
         {
             GetComponent<TrailRenderer>().Clear();
@@ -68,6 +75,23 @@ public class Spec : MonoBehaviour
         specRigidbody.linearVelocity = velocity;
     }
 
+    void ApplyMovementState()
+    {
+        if (canMove == wasMoving)
+        {
+            return;
+        }
+
+        wasMoving = canMove;
+        specRigidbody.gravityScale = canMove ? originalGravityScale : 0f;
+
+        if (!canMove)
+        {
+            specRigidbody.linearVelocity = Vector2.zero;
+            specRigidbody.angularVelocity = 0f;
+        }
+    }
+
     void OnCollisionEnter2D(Collision2D collision)
     {
         if (collision.gameObject.CompareTag("wall"))
@@ -97,6 +121,7 @@ public class Spec : MonoBehaviour
         {
             movingRight = false;
         }
+        gameController.RecordAttempt();
         deathCount++;
         Debug.Log("Death count: " + deathCount);
     }
