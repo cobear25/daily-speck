@@ -3,12 +3,12 @@ using UnityEngine.InputSystem;
 
 public class Spec : MonoBehaviour
 {
-    [SerializeField] float maxUpwardVelocity = 3f;
-    [SerializeField] float maxFallVelocity = 3f;
+    [SerializeField] float maxUpwardVelocity = 2f;
+    [SerializeField] float maxFallVelocity = 2f;
     [SerializeField] float verticalAcceleration = 500f;
     public GameController gameController;
     int deathCount = 0;
-    float speed = 1.3f;
+    float speed = 1.0f;
     public Vector2 initialPosition;
 
     public bool movingRight = true;
@@ -28,6 +28,7 @@ public class Spec : MonoBehaviour
     {
         if (!canMove)
         {
+            GetComponent<TrailRenderer>().Clear();
             acceleratingUp = false;
             return;
         }
@@ -80,11 +81,13 @@ public class Spec : MonoBehaviour
         else
         {
             ResetPosition();
+            GetComponent<TrailRenderer>().Clear();
         }
     }
 
     void ResetPosition()
     {
+        GetComponent<TrailRenderer>().Clear();
         transform.position = initialPosition;
         specRigidbody.linearVelocity = Vector2.zero;
         specRigidbody.angularVelocity = 0f;
@@ -96,5 +99,13 @@ public class Spec : MonoBehaviour
         }
         deathCount++;
         Debug.Log("Death count: " + deathCount);
+    }
+
+    void OnTriggerEnter2D(Collider2D collider)
+    {
+        if (collider.gameObject.CompareTag("jam"))
+        {
+            gameController.RevealJam(collider.gameObject);
+        }
     }
 }

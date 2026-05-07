@@ -89,11 +89,18 @@ public class GameController : MonoBehaviour
     [SerializeField] float ledgeInwardJitterChance = 0.75f;
     [SerializeField] float maxLedgeRotation = 10f;
     [SerializeField] float minLedgeVerticalSpacing = 1f;
+    [SerializeField] int ledgeLevelTypeWeight = 2;
 
     public int currentLevel = 0;
     static bool hasShownInitialCountdown = false;
+    bool[] foundJamByLevel = new bool[3];
     bool useDebugRandomSeed = false;
     int debugRandomSeed = 0;
+
+    public bool JamFoundThisLevel
+    {
+        get { return foundJamByLevel[currentLevel % foundJamByLevel.Length]; }
+    }
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -185,7 +192,8 @@ public class GameController : MonoBehaviour
 
         System.Random random = new System.Random(GetLevelSeed());
         LevelType levelType = GetRandomLevelType(random);
-        GenerateObstacles(specPosition, goalPosition, levelType, random);
+        List<Rect> occupiedSpaces = GenerateObstacles(specPosition, goalPosition, levelType, random);
+        TryPlaceJam(occupiedSpaces, random);
         
         Camera.main.backgroundColor = GetLevelBackgroundColor();
     }
@@ -212,7 +220,7 @@ public class GameController : MonoBehaviour
         spec.canMove = true;
     }
 
-    void GenerateObstacles(Vector2 specPosition, Vector2 goalPosition, LevelType levelType, System.Random random)
+    List<Rect> GenerateObstacles(Vector2 specPosition, Vector2 goalPosition, LevelType levelType, System.Random random)
     {
         List<Rect> occupiedSpaces = new List<Rect>
         {
@@ -225,6 +233,12 @@ public class GameController : MonoBehaviour
         Vector2Int obstacleCountRange = GetObstacleCountRange(levelType);
         int obstacleCount = random.Next(obstacleCountRange.x, obstacleCountRange.y + 1);
 
+        if (IsLedgeLevelType(levelType))
+        {
+            GenerateOrderedLedges(levelType, obstacleCount, occupiedSpaces, placedLedgeYs, random);
+            return occupiedSpaces;
+        }
+
         for (int i = 0; i < obstacleCount; i++)
         {
             if (ShouldPlaceLedge(levelType, random))
@@ -235,6 +249,52 @@ public class GameController : MonoBehaviour
             {
                 TryPlaceFloatingObstacle(levelType, occupiedSpaces, random);
             }
+        }
+
+        return occupiedSpaces;
+    }
+
+    bool TryPlaceJam(List<Rect> occupiedSpaces, System.Random random)
+    {
+        if (jamPrefab == null)
+        {
+            return false;
+        }
+
+        Vector2 jamSize = GetPrefabWorldSize(jamPrefab);
+
+        for (int attempt = 0; attempt < maxObstaclePlacementAttempts; attempt++)
+        {
+            Vector2 position = GetRandomObstaclePosition(random, jamSize);
+            Rect jamSpace = RectFromCenter(position, jamSize, obstaclePadding);
+
+            if (OverlapsAny(jamSpace, occupiedSpaces))
+            {
+                continue;
+            }
+
+            GameObject jam = Instantiate(jamPrefab, levelContainer);
+            jam.transform.position = position;
+            SetJamVisible(jam, JamFoundThisLevel);
+            occupiedSpaces.Add(jamSpace);
+            return true;
+        }
+
+        return false;
+    }
+
+    public void RevealJam(GameObject jam)
+    {
+        SetJamVisible(jam, true);
+        foundJamByLevel[currentLevel % foundJamByLevel.Length] = true;
+    }
+
+    void SetJamVisible(GameObject jam, bool isVisible)
+    {
+        SpriteRenderer[] spriteRenderers = jam.GetComponentsInChildren<SpriteRenderer>();
+        foreach (SpriteRenderer spriteRenderer in spriteRenderers)
+        {
+            spriteRenderer.enabled = isVisible;
         }
     }
 
@@ -247,6 +307,9 @@ public class GameController : MonoBehaviour
         }
 
         Vector2 obstacleSize = GetPrefabWorldSize(prefab);
+        Vector2 bestPosition = Vector2.zero;
+        Rect bestObstacleSpace = new Rect();
+        float bestClearance = float.NegativeInfinity;
 
         for (int attempt = 0; attempt < maxObstaclePlacementAttempts; attempt++)
         {
@@ -258,12 +321,92 @@ public class GameController : MonoBehaviour
                 continue;
             }
 
+            float clearance = GetClosestRectDistanceSquared(obstacleSpace, occupiedSpaces);
+            if (clearance > bestClearance)
+            {
+                bestPosition = position;
+                bestObstacleSpace = obstacleSpace;
+                bestClearance = clearance;
+            }
+        }
+
+        if (bestClearance > float.NegativeInfinity)
+        {
             GameObject obstacle = Instantiate(prefab, levelContainer);
-            obstacle.transform.position = position;
+            obstacle.transform.position = bestPosition;
             obstacle.transform.rotation = GetFloatingObstacleRotation(levelType, random);
             obstacle.GetComponent<SpriteRenderer>().color = GetLevelObstacleColor();
             ConfigureSquareMovement(obstacle, prefab, random);
-            occupiedSpaces.Add(obstacleSpace);
+            occupiedSpaces.Add(bestObstacleSpace);
+            return true;
+        }
+
+        return false;
+    }
+
+    void GenerateOrderedLedges(LevelType levelType, int ledgeCount, List<Rect> occupiedSpaces, List<float> placedLedgeYs, System.Random random)
+    {
+        if (ledgeCount <= 0)
+        {
+            return;
+        }
+
+        bool nextLedgeOnLeft = true;
+
+        for (int i = 0; i < ledgeCount; i++)
+        {
+            if (TryPlaceLedgeInVerticalSlot(levelType, occupiedSpaces, placedLedgeYs, i, ledgeCount, nextLedgeOnLeft, random)
+                || TryPlaceLedgeInVerticalSlot(levelType, occupiedSpaces, placedLedgeYs, i, ledgeCount, !nextLedgeOnLeft, random))
+            {
+                nextLedgeOnLeft = !nextLedgeOnLeft;
+            }
+        }
+    }
+
+    bool TryPlaceLedgeInVerticalSlot(LevelType levelType, List<Rect> occupiedSpaces, List<float> placedLedgeYs, int slotIndex, int slotCount, bool isOnLeft, System.Random random)
+    {
+        float slotStep = (obstacleSpawnMax.y - obstacleSpawnMin.y) / (slotCount + 1);
+        float targetY = obstacleSpawnMin.y + slotStep * (slotIndex + 1);
+        float yJitter = slotStep * 0.2f;
+        float orderedLedgeSpacing = Mathf.Min(minLedgeVerticalSpacing, slotStep * 0.8f);
+
+        for (int attempt = 0; attempt < maxObstaclePlacementAttempts; attempt++)
+        {
+            GameObject prefab = GetRandomLedgePrefab(levelType, random);
+            if (prefab == null)
+            {
+                return false;
+            }
+
+            Vector2 ledgeSize = GetPrefabWorldSize(prefab);
+            float minY = obstacleSpawnMin.y + ledgeSize.y / 2f;
+            float maxY = obstacleSpawnMax.y - ledgeSize.y / 2f;
+            float y = RandomRange(random, minY, maxY);
+            if (maxY > minY)
+            {
+                y = Mathf.Clamp(RandomRange(random, targetY - yJitter, targetY + yJitter), minY, maxY);
+            }
+            if (!IsFarEnoughFromOtherLedges(y, placedLedgeYs, orderedLedgeSpacing))
+            {
+                continue;
+            }
+
+            float baseX = isOnLeft ? leftLedgeX : rightLedgeX;
+            float x = baseX + GetLedgeXJitter(isOnLeft, random);
+            Vector2 position = new Vector2(x, y);
+            Rect ledgeSpace = RectFromCenter(position, ledgeSize, obstaclePadding);
+
+            if (OverlapsAny(ledgeSpace, occupiedSpaces))
+            {
+                continue;
+            }
+
+            GameObject ledge = Instantiate(prefab, levelContainer);
+            ledge.transform.position = position;
+            ledge.transform.rotation = GetLedgeRotation(random);
+            ledge.GetComponent<SpriteRenderer>().color = GetLevelObstacleColor();
+            occupiedSpaces.Add(ledgeSpace);
+            placedLedgeYs.Add(y);
             return true;
         }
 
@@ -351,10 +494,7 @@ public class GameController : MonoBehaviour
         AddSinglePrefabLevelTypes(levelTypes, LevelType.MediumTriangles, mediumTrianglePrefab);
         AddSinglePrefabLevelTypes(levelTypes, LevelType.BigTriangles, bigTrianglePrefab);
 
-        AddFloatingLevelTypes(levelTypes, LevelType.AllLedges, thinLedgePrefab, thickLedgePrefab, curvyLedgePrefab);
-        AddSinglePrefabLevelTypes(levelTypes, LevelType.ThinLedges, thinLedgePrefab);
-        AddSinglePrefabLevelTypes(levelTypes, LevelType.ThickLedges, thickLedgePrefab);
-        AddSinglePrefabLevelTypes(levelTypes, LevelType.CurvyLedges, curvyLedgePrefab);
+        AddLedgeLevelTypes(levelTypes);
 
         if (levelTypes.Count == 0)
         {
@@ -395,6 +535,18 @@ public class GameController : MonoBehaviour
         {
             levelTypes.Add(levelType);
             levelTypes.Add(tiltedLevelType);
+        }
+    }
+
+    void AddLedgeLevelTypes(List<LevelType> levelTypes)
+    {
+        int weight = Mathf.Max(1, ledgeLevelTypeWeight);
+        for (int i = 0; i < weight; i++)
+        {
+            AddFloatingLevelTypes(levelTypes, LevelType.AllLedges, thinLedgePrefab, thickLedgePrefab, curvyLedgePrefab);
+            AddSinglePrefabLevelTypes(levelTypes, LevelType.ThinLedges, thinLedgePrefab);
+            AddSinglePrefabLevelTypes(levelTypes, LevelType.ThickLedges, thickLedgePrefab);
+            AddSinglePrefabLevelTypes(levelTypes, LevelType.CurvyLedges, curvyLedgePrefab);
         }
     }
 
@@ -576,9 +728,14 @@ public class GameController : MonoBehaviour
 
     bool IsFarEnoughFromOtherLedges(float y, List<float> placedLedgeYs)
     {
+        return IsFarEnoughFromOtherLedges(y, placedLedgeYs, minLedgeVerticalSpacing);
+    }
+
+    bool IsFarEnoughFromOtherLedges(float y, List<float> placedLedgeYs, float minVerticalSpacing)
+    {
         foreach (float placedY in placedLedgeYs)
         {
-            if (Mathf.Abs(y - placedY) < minLedgeVerticalSpacing)
+            if (Mathf.Abs(y - placedY) < minVerticalSpacing)
             {
                 return false;
             }
@@ -823,6 +980,26 @@ public class GameController : MonoBehaviour
         }
 
         return false;
+    }
+
+    float GetClosestRectDistanceSquared(Rect rect, List<Rect> occupiedSpaces)
+    {
+        float closestDistanceSquared = float.PositiveInfinity;
+
+        foreach (Rect occupiedSpace in occupiedSpaces)
+        {
+            closestDistanceSquared = Mathf.Min(closestDistanceSquared, GetRectDistanceSquared(rect, occupiedSpace));
+        }
+
+        return closestDistanceSquared;
+    }
+
+    float GetRectDistanceSquared(Rect first, Rect second)
+    {
+        float xDistance = Mathf.Max(0f, Mathf.Max(first.xMin - second.xMax, second.xMin - first.xMax));
+        float yDistance = Mathf.Max(0f, Mathf.Max(first.yMin - second.yMax, second.yMin - first.yMax));
+
+        return xDistance * xDistance + yDistance * yDistance;
     }
 
     Color GetLevelObstacleColor()

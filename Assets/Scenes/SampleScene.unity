@@ -562,14 +562,15 @@ MonoBehaviour:
   thinLedgePrefab: {fileID: 8333661555181110808, guid: b8ab13a7699bb4ae3a9dcc249e7cc286, type: 3}
   thickLedgePrefab: {fileID: 2901058703648091440, guid: 34881aa627ffe4541b361e1b7dcaace3, type: 3}
   curvyLedgePrefab: {fileID: 7364716348632363664, guid: ad18a402fd0c54e10aa2dcea8d3be3cd, type: 3}
+  jamPrefab: {fileID: 5280560814294470143, guid: d238dab1beedf45a691076fc4b15e06b, type: 3}
   squareObstacleCountRangesByLevel:
   - {x: 6, y: 10}
   - {x: 8, y: 12}
   - {x: 10, y: 15}
   ledgeObstacleCountRangesByLevel:
+  - {x: 4, y: 6}
+  - {x: 4, y: 8}
   - {x: 6, y: 10}
-  - {x: 8, y: 10}
-  - {x: 8, y: 12}
   squareMovementChancesByLevel:
   - 0
   - 0.2
@@ -579,7 +580,7 @@ MonoBehaviour:
   - 0.5
   - 0.5
   extraSquareObstaclesPerWeekday: 1
-  extraLedgeObstaclesPerWeekday: 1
+  extraLedgeObstaclesPerWeekday: 0
   smallObstacleCountBonus: 4
   bigObstacleCountPenalty: 4
   extraMovementChancePerWeekday: 0.03
@@ -593,7 +594,8 @@ MonoBehaviour:
   ledgeXJitter: 1
   ledgeInwardJitterChance: 0.75
   maxLedgeRotation: 15
-  minLedgeVerticalSpacing: 1
+  minLedgeVerticalSpacing: 1.25
+  ledgeLevelTypeWeight: 2
   currentLevel: 0
 --- !u!4 &1300877422
 Transform:
@@ -636,154 +638,6 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 7045578202863434093, guid: 52553dce859ff46639c9278c8adaec6a, type: 3}
   m_PrefabInstance: {fileID: 8468673850279654522}
   m_PrefabAsset: {fileID: 0}
---- !u!1 &1615103631
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1615103634}
-  - component: {fileID: 1615103633}
-  - component: {fileID: 1615103632}
-  m_Layer: 0
-  m_Name: eggjam_0
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!60 &1615103632
-PolygonCollider2D:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1615103631}
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Density: 1
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_ForceSendLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_ForceReceiveLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_ContactCaptureLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_CallbackLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_IsTrigger: 1
-  m_UsedByEffector: 0
-  m_CompositeOperation: 0
-  m_CompositeOrder: 0
-  m_Offset: {x: 0, y: 0}
-  m_SpriteTilingProperty:
-    border: {x: 0, y: 0, z: 0, w: 0}
-    pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 4.9, y: 6.31}
-    newSize: {x: 4.9, y: 6.31}
-    adaptiveTilingThreshold: 0.5
-    drawMode: 0
-    adaptiveTiling: 0
-  m_AutoTiling: 0
-  m_Points:
-    m_Paths:
-    - - {x: -2.45, y: -2.895}
-      - {x: -2.37, y: -3.155}
-      - {x: 2.45, y: -3.155}
-      - {x: 2.45, y: 1.425}
-      - {x: -2.45, y: 1.425}
-    - - {x: -2.04, y: 3.155}
-      - {x: -2.04, y: 2.435}
-      - {x: 2.05, y: 2.435}
-      - {x: 2.05, y: 3.155}
-  m_UseDelaunayMesh: 1
---- !u!212 &1615103633
-SpriteRenderer:
-  serializedVersion: 2
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1615103631}
-  m_Enabled: 1
-  m_CastShadows: 0
-  m_ReceiveShadows: 0
-  m_DynamicOccludee: 1
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 1
-  m_LightProbeUsage: 1
-  m_ReflectionProbeUsage: 1
-  m_RayTracingMode: 0
-  m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 1
-  m_ForceMeshLod: -1
-  m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 2100000, guid: a97c105638bdf8b4a8650670310a4cd3, type: 2}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_ReceiveGI: 1
-  m_PreserveUVs: 0
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 1
-  m_SelectedEditorRenderState: 0
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_GlobalIlluminationMeshLod: 0
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: 0
-  m_MaskInteraction: 0
-  m_Sprite: {fileID: -2776750865139071088, guid: ccbebd957d45546399faca464573d3e6, type: 3}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_FlipX: 0
-  m_FlipY: 0
-  m_DrawMode: 0
-  m_Size: {x: 4.9, y: 6.31}
-  m_AdaptiveModeThreshold: 0.5
-  m_SpriteTileMode: 0
-  m_WasSpriteAssigned: 1
-  m_SpriteSortPoint: 0
---- !u!4 &1615103634
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1615103631}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.043344796, y: -1.4781381, z: 0}
-  m_LocalScale: {x: 0.05, y: 0.05, z: 0.05}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1662093222
 GameObject:
   m_ObjectHideFlags: 0
@@ -1539,4 +1393,3 @@ SceneRoots:
   - {fileID: 2011392078}
   - {fileID: 1662093226}
   - {fileID: 960354811}
-  - {fileID: 1615103634}
