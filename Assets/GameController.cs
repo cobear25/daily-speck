@@ -1,10 +1,17 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using TMPro;
 using UnityEngine.UI;
+using Unity.Services.Authentication;
+using Unity.Services.Core;
+using Unity.Services.Leaderboards;
+using Newtonsoft.Json;
+
+using ScoreMetadata = System.Collections.Generic.Dictionary<string, object>;
 
 public enum LevelType
 {
@@ -33,6 +40,10 @@ public enum LevelType
 
 public class GameController : MonoBehaviour
 {
+    const string dailyLeaderboardId = "Top_Daily_Scores";
+    const string dailyCompletionDateKey = "DailyCompletionDate";
+    const string dailyScoreSubmissionDateKey = "DailyScoreSubmissionDate";
+
     public Spec spec;
     public Transform levelContainer;
     public TextMeshProUGUI countdownText;
@@ -65,11 +76,18 @@ public class GameController : MonoBehaviour
     public TextMeshProUGUI level0AttemptsText;
     public TextMeshProUGUI level1AttemptsText;
     public TextMeshProUGUI level2AttemptsText;
+    public TMP_InputField usernameInput;
+    public Button submitScoreButton;
     public Image jam0Image;
     public Image jam1Image;
     public Image jam2Image;
 
     public GameObject leaderboardPanel;
+    public LeaderboardEntry leaderboardEntryPrefab;
+    public Transform leaderboardContent;
+    public Button nextDayLeaderboardButton;
+    public TextMeshProUGUI currentLeaderboardDateText;
+    [SerializeField] int leaderboardFetchLimit = 100;
 
     [Header("Daily Obstacles")]
     [SerializeField] Vector2Int[] squareObstacleCountRangesByLevel =
@@ -110,6 +128,9 @@ public class GameController : MonoBehaviour
     int[] attemptsByLevel = new int[3];
     bool useDebugRandomSeed = false;
     int debugRandomSeed = 0;
+    bool currentRunCanSubmitScore;
+    bool completedRunCanSubmitScore;
+    DateTime currentLeaderboardDate;
 
     public bool JamFoundThisLevel
     {
@@ -119,6 +140,11 @@ public class GameController : MonoBehaviour
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
+        currentRunCanSubmitScore = !HasCompletedDailyRun();
+        currentLeaderboardDate = DateTime.UtcNow.Date;
+        UpdateCurrentDateText();
+        UpdateLeaderboardDateText();
+
         if (winPanel != null)
         {
             winPanel.SetActive(false);
@@ -239,10 +265,10 @@ public class GameController : MonoBehaviour
             spec.canMove = false;
         }
 
-        if (dateText != null)
-        {
-            dateText.text = DateTime.Today.ToString("MMMM d yyyy");
-        }
+        completedRunCanSubmitScore = currentRunCanSubmitScore && !HasSubmittedDailyScore();
+        MarkDailyRunCompleted();
+
+        UpdateCurrentDateText();
 
         int totalAttempts = attemptsByLevel[0] + attemptsByLevel[1] + attemptsByLevel[2];
         if (totalAttemptsText != null)
@@ -257,10 +283,138 @@ public class GameController : MonoBehaviour
         SetImageVisible(jam0Image, foundJamByLevel[0]);
         SetImageVisible(jam1Image, foundJamByLevel[1]);
         SetImageVisible(jam2Image, foundJamByLevel[2]);
+        SetScoreSubmissionControlsVisible(completedRunCanSubmitScore);
 
         if (winPanel != null)
         {
             winPanel.SetActive(true);
+        }
+    }
+
+    public async void SubmitDailyScore()
+    {
+        if (!completedRunCanSubmitScore || HasSubmittedDailyScore())
+        {
+            Debug.Log("Daily score submission skipped: only the first completed run can submit.");
+            return;
+        }
+
+        string username = GetValidUsername();
+        if (string.IsNullOrEmpty(username))
+        {
+            Debug.LogWarning("Enter a username before submitting your daily score.");
+            return;
+        }
+
+        try
+        {
+            await InitializeServicesForLeaderboard();
+            await AuthenticationService.Instance.UpdatePlayerNameAsync(username);
+
+            AddPlayerScoreOptions options = new AddPlayerScoreOptions
+            {
+                Metadata = new Dictionary<string, object>
+                {
+                    { "level0jam", foundJamByLevel[0] },
+                    { "level1jam", foundJamByLevel[1] },
+                    { "level2jam", foundJamByLevel[2] },
+                    { "level0score", attemptsByLevel[0] },
+                    { "level1score", attemptsByLevel[1] },
+                    { "level2score", attemptsByLevel[2] }
+                }
+            };
+
+            await LeaderboardsService.Instance.AddPlayerScoreAsync(dailyLeaderboardId, GetTotalAttempts(), options);
+            MarkDailyScoreSubmitted();
+            completedRunCanSubmitScore = false;
+            Debug.Log("Daily score submitted.");
+            SetScoreSubmissionControlsVisible(false);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError("Failed to submit daily score: " + exception.Message);
+        }
+    }
+
+    async Task InitializeServicesForLeaderboard()
+    {
+        if (UnityServices.State == ServicesInitializationState.Uninitialized)
+        {
+            await UnityServices.InitializeAsync();
+        }
+
+        if (!AuthenticationService.Instance.IsSignedIn)
+        {
+            await AuthenticationService.Instance.SignInAnonymouslyAsync();
+        }
+    }
+
+    string GetValidUsername()
+    {
+        if (usernameInput == null)
+        {
+            return null;
+        }
+
+        string username = usernameInput.text.Trim();
+        if (string.IsNullOrEmpty(username) || username.Length > 50 || ContainsWhitespace(username))
+        {
+            return null;
+        }
+
+        return username;
+    }
+
+    bool ContainsWhitespace(string value)
+    {
+        foreach (char character in value)
+        {
+            if (char.IsWhiteSpace(character))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    int GetTotalAttempts()
+    {
+        return attemptsByLevel[0] + attemptsByLevel[1] + attemptsByLevel[2];
+    }
+
+    bool HasCompletedDailyRun()
+    {
+        return PlayerPrefs.GetString(dailyCompletionDateKey, string.Empty) == GetDailyDateKey();
+    }
+
+    void MarkDailyRunCompleted()
+    {
+        PlayerPrefs.SetString(dailyCompletionDateKey, GetDailyDateKey());
+        PlayerPrefs.Save();
+    }
+
+    bool HasSubmittedDailyScore()
+    {
+        return PlayerPrefs.GetString(dailyScoreSubmissionDateKey, string.Empty) == GetDailyDateKey();
+    }
+
+    void MarkDailyScoreSubmitted()
+    {
+        PlayerPrefs.SetString(dailyScoreSubmissionDateKey, GetDailyDateKey());
+        PlayerPrefs.Save();
+    }
+
+    string GetDailyDateKey()
+    {
+        return DateTime.Today.ToString("yyyyMMdd");
+    }
+
+    void UpdateCurrentDateText()
+    {
+        if (dateText != null)
+        {
+            dateText.text = DateTime.Today.ToString("MMMM d yyyy");
         }
     }
 
@@ -277,6 +431,19 @@ public class GameController : MonoBehaviour
         if (image != null)
         {
             image.gameObject.SetActive(isVisible);
+        }
+    }
+
+    void SetScoreSubmissionControlsVisible(bool isVisible)
+    {
+        if (usernameInput != null)
+        {
+            usernameInput.gameObject.SetActive(isVisible);
+        }
+
+        if (submitScoreButton != null)
+        {
+            submitScoreButton.gameObject.SetActive(isVisible);
         }
     }
 
@@ -1102,5 +1269,265 @@ public class GameController : MonoBehaviour
         }
 
         return levelBackgroundColors[currentLevel % levelBackgroundColors.Length];
+    }
+
+    public void PlayAgain()
+    {
+        currentLevel = 0;
+        useDebugRandomSeed = false;
+        currentRunCanSubmitScore = false;
+        completedRunCanSubmitScore = false;
+        Array.Clear(attemptsByLevel, 0, attemptsByLevel.Length);
+        Array.Clear(foundJamByLevel, 0, foundJamByLevel.Length);
+
+        if (leaderboardPanel != null)
+        {
+            leaderboardPanel.SetActive(false);
+        }
+
+        GenerateLevel();
+    }
+
+    public async void ShowLeaderboard()
+    {
+        if (leaderboardPanel != null)
+        {
+            leaderboardPanel.SetActive(true);
+        }
+
+        currentLeaderboardDate = DateTime.UtcNow.Date;
+        await UpdateLeaderboardForCurrentDate();
+    }
+
+    async Task UpdateLeaderboardForCurrentDate()
+    {
+        ClearLeaderboardEntries();
+        UpdateLeaderboardDateButtons();
+
+        if (leaderboardEntryPrefab == null || leaderboardContent == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await InitializeServicesForLeaderboard();
+
+            DateTime today = DateTime.UtcNow.Date;
+            bool isToday = currentLeaderboardDate == today;
+
+            if (isToday)
+            {
+                var scores = await LeaderboardsService.Instance.GetScoresAsync(
+                    dailyLeaderboardId,
+                    new GetScoresOptions
+                    {
+                        IncludeMetadata = true,
+                        Limit = leaderboardFetchLimit
+                    }
+                );
+
+                PopulateLeaderboardEntries(scores.Results);
+                return;
+            }
+
+            int daysAgo = (int)(today - currentLeaderboardDate).TotalDays;
+            var versions = await LeaderboardsService.Instance.GetVersionsAsync(
+                dailyLeaderboardId,
+                new GetVersionsOptions { Limit = Mathf.Max(leaderboardFetchLimit, daysAgo) }
+            );
+
+            if (daysAgo <= 0 || daysAgo > versions.Results.Count)
+            {
+                return;
+            }
+
+            string versionId = versions.Results[daysAgo - 1].Id;
+            var versionScores = await LeaderboardsService.Instance.GetVersionScoresAsync(
+                dailyLeaderboardId,
+                versionId,
+                new GetVersionScoresOptions
+                {
+                    IncludeMetadata = true,
+                    Limit = leaderboardFetchLimit
+                }
+            );
+
+            PopulateLeaderboardEntries(versionScores.Results);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError("Failed to load leaderboard: " + exception.Message);
+        }
+    }
+
+    public void HideLeaderboard()
+    {
+        if (leaderboardPanel != null)
+        {
+            leaderboardPanel.SetActive(false);
+        }
+    }
+
+    void PopulateLeaderboardEntries(IEnumerable<Unity.Services.Leaderboards.Models.LeaderboardEntry> scores)
+    {
+        foreach (var score in scores)
+        {
+            LeaderboardScoreMetadata metadata = GetLeaderboardScoreMetadata(score.Metadata);
+            LeaderboardEntry entry = Instantiate(leaderboardEntryPrefab, leaderboardContent);
+            entry.SetEntry(
+                GetDisplayUsername(score.PlayerName),
+                Mathf.RoundToInt((float)score.Score),
+                metadata.level0score,
+                metadata.level1score,
+                metadata.level2score,
+                metadata.level0jam,
+                metadata.level1jam,
+                metadata.level2jam
+            );
+        }
+    }
+
+    void UpdateLeaderboardDateButtons()
+    {
+        UpdateLeaderboardDateText();
+
+        if (nextDayLeaderboardButton != null)
+        {
+            nextDayLeaderboardButton.interactable = currentLeaderboardDate < DateTime.UtcNow.Date;
+        }
+    }
+
+    void UpdateLeaderboardDateText()
+    {
+        if (currentLeaderboardDateText != null)
+        {
+            currentLeaderboardDateText.text = currentLeaderboardDate.ToString("MMMM d yyyy");
+        }
+    }
+
+    void ClearLeaderboardEntries()
+    {
+        if (leaderboardContent == null)
+        {
+            return;
+        }
+
+        foreach (Transform child in leaderboardContent)
+        {
+            Destroy(child.gameObject);
+        }
+    }
+
+    LeaderboardScoreMetadata GetLeaderboardScoreMetadata(string metadataJson)
+    {
+        if (string.IsNullOrEmpty(metadataJson))
+        {
+            return new LeaderboardScoreMetadata();
+        }
+
+        try
+        {
+            ScoreMetadata metadata = JsonConvert.DeserializeObject<ScoreMetadata>(metadataJson);
+            if (metadata == null)
+            {
+                return new LeaderboardScoreMetadata();
+            }
+
+            return new LeaderboardScoreMetadata
+            {
+                level0jam = GetMetadataBool(metadata, "level0jam"),
+                level1jam = GetMetadataBool(metadata, "level1jam"),
+                level2jam = GetMetadataBool(metadata, "level2jam"),
+                level0score = GetMetadataInt(metadata, "level0score"),
+                level1score = GetMetadataInt(metadata, "level1score"),
+                level2score = GetMetadataInt(metadata, "level2score")
+            };
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("Failed to parse leaderboard metadata: " + exception.Message);
+            return new LeaderboardScoreMetadata();
+        }
+    }
+
+    int GetMetadataInt(ScoreMetadata metadata, string key)
+    {
+        if (!metadata.ContainsKey(key) || metadata[key] == null)
+        {
+            return 0;
+        }
+
+        return Convert.ToInt32(metadata[key]);
+    }
+
+    bool GetMetadataBool(ScoreMetadata metadata, string key)
+    {
+        if (!metadata.ContainsKey(key) || metadata[key] == null)
+        {
+            return false;
+        }
+
+        return Convert.ToBoolean(metadata[key]);
+    }
+
+    string GetDisplayUsername(string username)
+    {
+        if (string.IsNullOrEmpty(username) || username.Length < 5)
+        {
+            return username;
+        }
+
+        int suffixStart = username.Length - 5;
+        if (username[suffixStart] != '#')
+        {
+            return username;
+        }
+
+        for (int i = suffixStart + 1; i < username.Length; i++)
+        {
+            if (!char.IsDigit(username[i]))
+            {
+                return username;
+            }
+        }
+
+        return username.Substring(0, suffixStart);
+    }
+
+    [Serializable]
+    class LeaderboardScoreMetadata
+    {
+        public bool level0jam;
+        public bool level1jam;
+        public bool level2jam;
+        public int level0score;
+        public int level1score;
+        public int level2score;
+    }
+
+    public async void ShowPreviousDayLeaderboard()
+    {
+        currentLeaderboardDate = currentLeaderboardDate.AddDays(-1);
+        await UpdateLeaderboardForCurrentDate();
+    }
+
+    public async void ShowNextDayLeaderboard()
+    {
+        DateTime today = DateTime.UtcNow.Date;
+        if (currentLeaderboardDate >= today)
+        {
+            currentLeaderboardDate = today;
+            UpdateLeaderboardDateButtons();
+            return;
+        }
+
+        currentLeaderboardDate = currentLeaderboardDate.AddDays(1);
+        if (currentLeaderboardDate > today)
+        {
+            currentLeaderboardDate = today;
+        }
+
+        await UpdateLeaderboardForCurrentDate();
     }
 }
