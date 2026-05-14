@@ -221,11 +221,11 @@ public class GameController : MonoBehaviour
         }
 
         GameObject goal = Instantiate(goalPrefab, levelContainer);
-        Vector2 goalPosition = new Vector2(2.6f, 4.56f);
+        Vector2 goalPosition = new Vector2(2.8f, 4.56f);
         goal.transform.position = goalPosition;
         if (currentLevel == 1)
         {
-            goalPosition = new Vector2(-2.6f, -4.56f);
+            goalPosition = new Vector2(-2.8f, -4.56f);
             goal.transform.position = goalPosition;
         }
 

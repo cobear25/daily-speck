@@ -170,8 +170,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1eb295990900c4f52b974f7ad21638f4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
-  maxUpwardVelocity: 2.5
-  maxFallVelocity: 2.5
+  maxUpwardVelocity: 1.7
+  maxFallVelocity: 1.7
   verticalAcceleration: 15
   gameController: {fileID: 0}
   initialPosition: {x: 0, y: 0}

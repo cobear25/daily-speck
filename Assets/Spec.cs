@@ -3,8 +3,8 @@ using UnityEngine.InputSystem;
 
 public class Spec : MonoBehaviour
 {
-    [SerializeField] float maxUpwardVelocity = 2f;
-    [SerializeField] float maxFallVelocity = 2f;
+    [SerializeField] float maxUpwardVelocity = 1f;
+    [SerializeField] float maxFallVelocity = 1f;
     [SerializeField] float verticalAcceleration = 500f;
     public GameController gameController;
     int deathCount = 0;
