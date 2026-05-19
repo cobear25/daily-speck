@@ -43,6 +43,8 @@ public class GameController : MonoBehaviour
     const string dailyLeaderboardId = "Top_Daily_Scores";
     const string dailyCompletionDateKey = "DailyCompletionDate";
     const string dailyScoreSubmissionDateKey = "DailyScoreSubmissionDate";
+    static readonly string[] dailyLevelScoreKeys = { "DailyLevel0Score", "DailyLevel1Score", "DailyLevel2Score" };
+    static readonly string[] dailyLevelJamKeys = { "DailyLevel0Jam", "DailyLevel1Jam", "DailyLevel2Jam" };
 
     public Spec spec;
     public Transform levelContainer;
@@ -85,6 +87,7 @@ public class GameController : MonoBehaviour
     public GameObject leaderboardPanel;
     public LeaderboardEntry leaderboardEntryPrefab;
     public Transform leaderboardContent;
+    public LeaderboardEntry currentPlayerLeaderboardEntry;
     public Button nextDayLeaderboardButton;
     public TextMeshProUGUI currentLeaderboardDateText;
     [SerializeField] int leaderboardFetchLimit = 100;
@@ -123,7 +126,6 @@ public class GameController : MonoBehaviour
     [SerializeField] int ledgeLevelTypeWeight = 2;
 
     public int currentLevel = 0;
-    static bool hasShownInitialCountdown = false;
     bool[] foundJamByLevel = new bool[3];
     int[] attemptsByLevel = new int[3];
     bool useDebugRandomSeed = false;
@@ -131,6 +133,9 @@ public class GameController : MonoBehaviour
     bool currentRunCanSubmitScore;
     bool completedRunCanSubmitScore;
     DateTime currentLeaderboardDate;
+    float timeScaleBeforeLeaderboard = 1f;
+    bool leaderboardPausedGame;
+    Coroutine countdownCoroutine;
 
     public bool JamFoundThisLevel
     {
@@ -144,6 +149,7 @@ public class GameController : MonoBehaviour
         currentLeaderboardDate = DateTime.UtcNow.Date;
         UpdateCurrentDateText();
         UpdateLeaderboardDateText();
+        UpdateCurrentPlayerLeaderboardEntry();
 
         if (winPanel != null)
         {
@@ -151,15 +157,6 @@ public class GameController : MonoBehaviour
         }
 
         GenerateLevel();
-
-        if (!hasShownInitialCountdown)
-        {
-            StartCoroutine(PlayInitialCountdown());
-        }
-        else if (countdownText != null)
-        {
-            countdownText.gameObject.SetActive(false);
-        }
     }
 
     // Update is called once per frame
@@ -177,6 +174,11 @@ public class GameController : MonoBehaviour
             LevelBeat();
         }
 #endif
+    }
+
+    void OnDestroy()
+    {
+        ResumeGameAfterLeaderboard();
     }
 
     public void LevelBeat()
@@ -210,7 +212,7 @@ public class GameController : MonoBehaviour
 
         this.spec = Instantiate(specPrefab, levelContainer).GetComponent<Spec>();
         this.spec.gameController = this;
-        this.spec.canMove = hasShownInitialCountdown;
+        this.spec.canMove = false;
         Vector2 specPosition = new Vector2(-2f, -3.5f);
         this.spec.transform.position = specPosition;
         if (currentLevel == 1)
@@ -231,11 +233,11 @@ public class GameController : MonoBehaviour
 
         GameObject leftWall = Instantiate(wallPrefab, levelContainer);
         leftWall.transform.position = new Vector2(-3.3f, 0f);
-        leftWall.GetComponent<SpriteRenderer>().color = GetLevelObstacleColor();
+        // leftWall.GetComponent<SpriteRenderer>().color = GetLevelObstacleColor();
 
         GameObject rightWall = Instantiate(wallPrefab, levelContainer);
         rightWall.transform.position = new Vector2(3.3f, 0f);
-        rightWall.GetComponent<SpriteRenderer>().color = GetLevelObstacleColor();
+        // rightWall.GetComponent<SpriteRenderer>().color = GetLevelObstacleColor();
 
         GameObject roof = Instantiate(roofPrefab, levelContainer);
         roof.transform.position = new Vector2(0f, 5.37f);
@@ -251,6 +253,7 @@ public class GameController : MonoBehaviour
         TryPlaceJam(occupiedSpaces, random);
         
         Camera.main.backgroundColor = GetLevelBackgroundColor();
+        StartLevelCountdown();
     }
 
     public void RecordAttempt()
@@ -284,6 +287,7 @@ public class GameController : MonoBehaviour
         SetImageVisible(jam1Image, foundJamByLevel[1]);
         SetImageVisible(jam2Image, foundJamByLevel[2]);
         SetScoreSubmissionControlsVisible(completedRunCanSubmitScore);
+        UpdateCurrentPlayerLeaderboardEntry();
 
         if (winPanel != null)
         {
@@ -329,6 +333,7 @@ public class GameController : MonoBehaviour
             completedRunCanSubmitScore = false;
             Debug.Log("Daily score submitted.");
             SetScoreSubmissionControlsVisible(false);
+            UpdateCurrentPlayerLeaderboardEntry();
         }
         catch (Exception exception)
         {
@@ -356,26 +361,28 @@ public class GameController : MonoBehaviour
             return null;
         }
 
-        string username = usernameInput.text.Trim();
-        if (string.IsNullOrEmpty(username) || username.Length > 50 || ContainsWhitespace(username))
+        string username = RemoveWhitespace(usernameInput.text);
+        if (string.IsNullOrEmpty(username) || username.Length > 50)
         {
             return null;
         }
 
+        usernameInput.text = username;
         return username;
     }
 
-    bool ContainsWhitespace(string value)
+    string RemoveWhitespace(string value)
     {
+        List<char> characters = new List<char>();
         foreach (char character in value)
         {
-            if (char.IsWhiteSpace(character))
+            if (!char.IsWhiteSpace(character))
             {
-                return true;
+                characters.Add(character);
             }
         }
 
-        return false;
+        return new string(characters.ToArray());
     }
 
     int GetTotalAttempts()
@@ -391,6 +398,12 @@ public class GameController : MonoBehaviour
     void MarkDailyRunCompleted()
     {
         PlayerPrefs.SetString(dailyCompletionDateKey, GetDailyDateKey());
+        for (int i = 0; i < attemptsByLevel.Length; i++)
+        {
+            PlayerPrefs.SetInt(dailyLevelScoreKeys[i], attemptsByLevel[i]);
+            PlayerPrefs.SetInt(dailyLevelJamKeys[i], foundJamByLevel[i] ? 1 : 0);
+        }
+
         PlayerPrefs.Save();
     }
 
@@ -447,26 +460,44 @@ public class GameController : MonoBehaviour
         }
     }
 
-    IEnumerator PlayInitialCountdown()
+    void StartLevelCountdown()
+    {
+        if (countdownCoroutine != null)
+        {
+            StopCoroutine(countdownCoroutine);
+        }
+
+        countdownCoroutine = StartCoroutine(PlayLevelCountdown(currentLevel == 0 ? 3 : 2));
+    }
+
+    IEnumerator PlayLevelCountdown(int seconds)
     {
         if (countdownText == null)
         {
-            hasShownInitialCountdown = true;
-            spec.canMove = true;
+            if (spec != null)
+            {
+                spec.canMove = true;
+            }
+
+            countdownCoroutine = null;
             yield break;
         }
 
         countdownText.gameObject.SetActive(true);
 
-        for (int count = 3; count > 0; count--)
+        for (int count = seconds; count > 0; count--)
         {
             countdownText.text = count.ToString();
             yield return new WaitForSeconds(1f);
         }
 
         countdownText.gameObject.SetActive(false);
-        hasShownInitialCountdown = true;
-        spec.canMove = true;
+        if (spec != null)
+        {
+            spec.canMove = true;
+        }
+
+        countdownCoroutine = null;
     }
 
     List<Rect> GenerateObstacles(Vector2 specPosition, Vector2 goalPosition, LevelType levelType, System.Random random)
@@ -1284,12 +1315,15 @@ public class GameController : MonoBehaviour
         {
             leaderboardPanel.SetActive(false);
         }
+        ResumeGameAfterLeaderboard();
 
         GenerateLevel();
     }
 
     public async void ShowLeaderboard()
     {
+        PauseGameForLeaderboard();
+
         if (leaderboardPanel != null)
         {
             leaderboardPanel.SetActive(true);
@@ -1303,6 +1337,7 @@ public class GameController : MonoBehaviour
     {
         ClearLeaderboardEntries();
         UpdateLeaderboardDateButtons();
+        UpdateCurrentPlayerLeaderboardEntry();
 
         if (leaderboardEntryPrefab == null || leaderboardContent == null)
         {
@@ -1367,6 +1402,31 @@ public class GameController : MonoBehaviour
         {
             leaderboardPanel.SetActive(false);
         }
+
+        ResumeGameAfterLeaderboard();
+    }
+
+    void PauseGameForLeaderboard()
+    {
+        if (leaderboardPausedGame)
+        {
+            return;
+        }
+
+        timeScaleBeforeLeaderboard = Time.timeScale;
+        Time.timeScale = 0f;
+        leaderboardPausedGame = true;
+    }
+
+    void ResumeGameAfterLeaderboard()
+    {
+        if (!leaderboardPausedGame)
+        {
+            return;
+        }
+
+        Time.timeScale = timeScaleBeforeLeaderboard;
+        leaderboardPausedGame = false;
     }
 
     void PopulateLeaderboardEntries(IEnumerable<Unity.Services.Leaderboards.Models.LeaderboardEntry> scores)
@@ -1415,8 +1475,56 @@ public class GameController : MonoBehaviour
 
         foreach (Transform child in leaderboardContent)
         {
+            if (currentPlayerLeaderboardEntry != null && child == currentPlayerLeaderboardEntry.transform)
+            {
+                continue;
+            }
+
             Destroy(child.gameObject);
         }
+    }
+
+    void UpdateCurrentPlayerLeaderboardEntry()
+    {
+        if (currentPlayerLeaderboardEntry == null)
+        {
+            return;
+        }
+
+        if (currentLeaderboardDate != DateTime.UtcNow.Date || !TryGetCompletedDailyRunMetadata(out LeaderboardScoreMetadata metadata))
+        {
+            currentPlayerLeaderboardEntry.SetPlaceholder("You", "-");
+            return;
+        }
+
+        currentPlayerLeaderboardEntry.SetEntry(
+            "You",
+            metadata.level0score + metadata.level1score + metadata.level2score,
+            metadata.level0score,
+            metadata.level1score,
+            metadata.level2score,
+            metadata.level0jam,
+            metadata.level1jam,
+            metadata.level2jam
+        );
+    }
+
+    bool TryGetCompletedDailyRunMetadata(out LeaderboardScoreMetadata metadata)
+    {
+        metadata = new LeaderboardScoreMetadata();
+        if (!HasCompletedDailyRun())
+        {
+            return false;
+        }
+
+        metadata.level0score = PlayerPrefs.GetInt(dailyLevelScoreKeys[0], 0);
+        metadata.level1score = PlayerPrefs.GetInt(dailyLevelScoreKeys[1], 0);
+        metadata.level2score = PlayerPrefs.GetInt(dailyLevelScoreKeys[2], 0);
+        metadata.level0jam = PlayerPrefs.GetInt(dailyLevelJamKeys[0], 0) == 1;
+        metadata.level1jam = PlayerPrefs.GetInt(dailyLevelJamKeys[1], 0) == 1;
+        metadata.level2jam = PlayerPrefs.GetInt(dailyLevelJamKeys[2], 0) == 1;
+
+        return metadata.level0score + metadata.level1score + metadata.level2score > 0;
     }
 
     LeaderboardScoreMetadata GetLeaderboardScoreMetadata(string metadataJson)
